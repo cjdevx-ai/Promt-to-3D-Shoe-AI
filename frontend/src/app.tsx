@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { LandingPage } from './LandingPage';
 import { GeneratorApp } from './GeneratorApp';
+import './App.css';
 
 function App() {
   const [showGenerator, setShowGenerator] = useState(false);
