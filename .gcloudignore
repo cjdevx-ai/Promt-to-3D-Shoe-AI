@@ -1,0 +1,15 @@
+.gcloudignore
+.git
+.gitignore
+node_modules/
+backend/.venv/
+backend/__pycache__/
+frontend/node_modules/
+frontend/dist/
+outputs_test/
+backend/static/outputs/
+*.log
+*.glb
+*.webp
+*.png
+*.jpg
