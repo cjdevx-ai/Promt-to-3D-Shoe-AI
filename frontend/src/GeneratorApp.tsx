@@ -4,7 +4,8 @@ import { Send, Loader2, Download, RefreshCw, ChevronLeft, Box, Image as ImageIco
 import axios from 'axios';
 import '@google/model-viewer';
 
-const API_BASE = "http://localhost:8001";
+// Use environment variable for production, fallback to local for dev
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8001";
 
 // Extend JSX for model-viewer custom element
 declare global {
