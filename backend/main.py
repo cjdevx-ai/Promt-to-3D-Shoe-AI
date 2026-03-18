@@ -6,6 +6,7 @@ import shutil
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -14,7 +15,7 @@ load_dotenv()
 
 app = FastAPI()
 
-# Enable CORS
+# Enable CORS (still useful for local dev)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -25,7 +26,6 @@ app.add_middleware(
 
 # Constants
 STABILITY_API_KEY = os.getenv("STABILITY_API_KEY")
-# Remove any extra quotes or spaces from the API key
 if STABILITY_API_KEY:
     STABILITY_API_KEY = STABILITY_API_KEY.strip().replace('"', '').replace("'", "")
 
@@ -36,12 +36,11 @@ STABILITY_3D_URL = "https://api.stability.ai/v2beta/3d/stable-fast-3d"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 OUTPUT_DIR = os.path.join(STATIC_DIR, "outputs")
+FRONTEND_DIR = os.path.join(STATIC_DIR, "dist") # Where the React build will live
 
-# Ensure output directory exists
+# Ensure directories exist
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-# Mount static files
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+os.makedirs(FRONTEND_DIR, exist_ok=True)
 
 class GenerateRequest(BaseModel):
     prompt: str
@@ -49,41 +48,23 @@ class GenerateRequest(BaseModel):
 # Store task status in memory
 tasks = {}
 
-@app.get("/")
-async def root():
-    return {
-        "status": "online",
-        "message": "Stability AI 3D Generation API (Pipeline-style) is running",
-        "endpoints": {
-            "generate": "/generate (POST)",
-            "tasks": "/tasks/{task_id} (GET)",
-            "static": "/static"
-        }
-    }
+# --- API ENDPOINTS ---
+
+@app.get("/api/health")
+async def health():
+    return {"status": "online", "message": "ShoeAI API is running"}
 
 def process_stability_pipeline(task_id: str, prompt: str, base_url: str):
     try:
         tasks[task_id]["status"] = "GENERATING_IMAGE"
         tasks[task_id]["progress"] = 20
         
-        # Step 1: Generate Image using Stable Image Core
-        prompt_eng = f"A single high-quality right-foot {prompt}, side view, white background, professional studio lighting, 4k"
+        headers = {"authorization": f"Bearer {STABILITY_API_KEY}", "accept": "image/*"}
+        data = {"prompt": f"A single high-quality right-foot {prompt}, side view, white background, professional studio lighting, 4k", "output_format": "webp"}
         
-        headers = {
-            "authorization": f"Bearer {STABILITY_API_KEY}",
-            "accept": "image/*"
-        }
-        
-        data = {
-            "prompt": prompt_eng,
-            "output_format": "webp",
-        }
-        
-        # files={"none": ''} is required by Stability's multipart/form-data spec for core
         response = requests.post(STABILITY_IMAGE_URL, headers=headers, files={"none": ''}, data=data)
-        
         if response.status_code != 200:
-            raise Exception(f"Image generation failed ({response.status_code}): {response.text}")
+            raise Exception(f"Image generation failed: {response.text}")
         
         image_path = os.path.join(OUTPUT_DIR, f"{task_id}.webp")
         with open(image_path, "wb") as f:
@@ -92,7 +73,6 @@ def process_stability_pipeline(task_id: str, prompt: str, base_url: str):
         tasks[task_id]["status"] = "CONVERTING_TO_3D"
         tasks[task_id]["progress"] = 60
         
-        # Step 2: Convert Image to 3D Model using Stable Fast 3D
         with open(image_path, "rb") as image_file:
             sf3d_response = requests.post(
                 STABILITY_3D_URL,
@@ -101,7 +81,7 @@ def process_stability_pipeline(task_id: str, prompt: str, base_url: str):
             )
 
         if sf3d_response.status_code != 200:
-            raise Exception(f"3D conversion failed ({sf3d_response.status_code}): {sf3d_response.text}")
+            raise Exception(f"3D conversion failed: {sf3d_response.text}")
             
         glb_filename = f"{task_id}.glb"
         glb_path = os.path.join(OUTPUT_DIR, glb_filename)
@@ -114,29 +94,19 @@ def process_stability_pipeline(task_id: str, prompt: str, base_url: str):
             "model_url": f"{base_url}static/outputs/{glb_filename}",
             "thumbnail_url": f"{base_url}static/outputs/{task_id}.webp"
         })
-        print(f"Task {task_id} completed successfully")
         
     except Exception as e:
-        print(f"Error processing pipeline {task_id}: {e}")
-        tasks[task_id]["status"] = "FAILED"
-        tasks[task_id]["progress"] = 0
-        tasks[task_id]["error"] = str(e)
+        tasks[task_id].update({"status": "FAILED", "progress": 0, "error": str(e)})
 
 @app.post("/generate")
 async def generate_3d(request: GenerateRequest, background_tasks: BackgroundTasks, fastapi_request: Request):
     if not STABILITY_API_KEY:
-        raise HTTPException(status_code=500, detail="STABILITY_API_KEY not configured in .env")
-
-    # Determine base URL
+        raise HTTPException(status_code=500, detail="STABILITY_API_KEY not configured")
+    
     base_url = str(fastapi_request.base_url)
-
-    # Create local task
     task_id = str(uuid.uuid4())
     tasks[task_id] = {"status": "PENDING", "progress": 0}
-    
-    # Add to background tasks
     background_tasks.add_task(process_stability_pipeline, task_id, request.prompt, base_url)
-    
     return {"task_id": task_id}
 
 @app.get("/tasks/{task_id}")
@@ -145,7 +115,23 @@ async def get_task_status(task_id: str):
         raise HTTPException(status_code=404, detail="Task not found")
     return tasks[task_id]
 
+# --- STATIC FILE SERVING ---
+
+# Serve generated assets (images and models)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+# Serve the React Frontend (must be last)
+@app.get("/{full_path:path}")
+async def serve_frontend(full_path: str):
+    file_path = os.path.join(FRONTEND_DIR, full_path)
+    if os.path.isfile(file_path):
+        return FileResponse(file_path)
+    # Default to index.html for SPA routing
+    index_path = os.path.join(FRONTEND_DIR, "index.html")
+    if os.path.isfile(index_path):
+        return FileResponse(index_path)
+    return {"message": "Frontend not found. Did you build it?"}
+
 if __name__ == "__main__":
     import uvicorn
-    print("Starting Stability Pipeline Backend on http://localhost:8001")
-    uvicorn.run(app, host="127.0.0.1", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=8080)
