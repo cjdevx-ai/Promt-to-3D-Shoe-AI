@@ -3,6 +3,11 @@ FROM node:18-slim AS build
 
 WORKDIR /app
 
+# Accept the API URL as a build argument
+ARG VITE_API_URL
+# Set it as an environment variable for Vite
+ENV VITE_API_URL=$VITE_API_URL
+
 # Copy package.json and package-lock.json
 COPY package*.json ./
 
