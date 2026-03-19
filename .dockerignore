@@ -1,0 +1,14 @@
+.git
+.gitignore
+.venv
+node_modules
+**/__pycache__
+**/.pytest_cache
+**/dist
+**/build
+backend/static/outputs/*
+frontend/.env
+backend/.env
+README.md
+docker-compose.yml
+cloudbuild.yaml

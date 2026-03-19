@@ -91,8 +91,8 @@ def process_stability_pipeline(task_id: str, prompt: str, base_url: str):
         tasks[task_id].update({
             "status": "SUCCEEDED",
             "progress": 100,
-            "model_url": f"{base_url}static/outputs/{glb_filename}",
-            "thumbnail_url": f"{base_url}static/outputs/{task_id}.webp"
+            "model_url": f"/static/outputs/{glb_filename}",
+            "thumbnail_url": f"/static/outputs/{task_id}.webp"
         })
         
     except Exception as e:
@@ -134,4 +134,4 @@ async def serve_frontend(full_path: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    uvicorn.run(app, host="0.0.0.0", port=8001)

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Loader2, Download, RefreshCw, ChevronLeft, Box, Image as ImageIcon, Maximize2 } from 'lucide-react';
 import axios from 'axios';
 import '@google/model-viewer';
+import { cn } from './utils';
 
 // Use empty string for relative paths in monolith, fallback to local for dev
 const API_BASE = import.meta.env.VITE_API_URL || "";
